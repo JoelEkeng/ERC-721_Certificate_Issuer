@@ -1,0 +1,17 @@
+# Foundry build artifacts
+out/
+cache/
+
+# Broadcast logs
+broadcast/
+
+# IDE
+.idea/
+.vscode/
+
+# macOS
+.DS_Store
+
+# Environment variables
+.env
+.env.local
