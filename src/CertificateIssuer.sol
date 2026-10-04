@@ -16,21 +16,45 @@ import "openzeppelin-contracts/contracts/utils/Base64.sol";
 contract CertificateIssuer is ERC721, Ownable {
     using Strings for uint256;
 
+     enum CertificateType {
+            CertificateOfCompletion,
+            CertificateOfAchievement,
+            CertificateOfExcellence,
+            CertificateOfParticipation,
+            CertificateOfMerit,
+            CertificateOfRecognition,
+            CertificateOfDistinction,
+            CertificateOfHonor,
+            CertificateOfProficiency,
+            CertificateOfCompetence,
+            CertificateOfMastery,
+            CertificateOfGraduation,
+            CertificateOfAccomplishment,
+            CertificateOfSuccess,
+            CertificateOfCompletionWithDistinction,
+            CertificateOfCompletionWithHonors
+        }
+
     struct Certificate {
         string recipientName;
         string courseTitle;
+        CertificateType certType;
         uint256 issueDate;
         bool revoked;
+        
+       
     }
 
     uint256 private _nextTokenId;
+
     mapping(uint256 => Certificate) public certificates;
 
     event CertificateIssued(
-        uint256 indexed tokenId, address indexed recipient, string recipientName, string courseTitle, uint256 issueDate
+        uint256 indexed tokenId, address indexed recipient, string recipientName, string courseTitle, CertificateType certificateType,uint256 issueDate
     );
 
     event CertificateRevoked(uint256 indexed tokenId);
+    event CertificateisValid(uint256 indexed tokenId);
 
     error EmptyRecipientName();
     error EmptyCourseTitle();
@@ -38,6 +62,7 @@ contract CertificateIssuer is ERC721, Ownable {
     error CertificateNonExistent();
     error CertificateAlreadyRevoked();
     error NonTransferable();
+    error recipientNameTooLong();
 
     constructor(string memory name, string memory symbol) ERC721(name, symbol) Ownable(msg.sender) {}
 
@@ -46,39 +71,50 @@ contract CertificateIssuer is ERC721, Ownable {
      * @param recipient The address that will receive the certificate.
      * @param recipientName The name of the certificate recipient.
      * @param courseTitle The title of the completed course.
+     * @param certType The type of the certificate.
      * @return tokenId The ID of the newly minted certificate.
      */
-    function issueCertificate(address recipient, string memory recipientName, string memory courseTitle)
+    function issueCertificate(address recipient, string memory recipientName, string memory courseTitle, CertificateType certType)
         public
         onlyOwner
         returns (uint256)
     {
         if (bytes(recipientName).length == 0) revert EmptyRecipientName();
         if (bytes(courseTitle).length == 0) revert EmptyCourseTitle();
+        if (bytes(recipientName).length > 100) revert recipientNameTooLong();
         if (recipient == address(0)) revert InvalidRecipient();
 
         uint256 tokenId = _nextTokenId;
         _nextTokenId++;
 
         certificates[tokenId] = Certificate({
-            recipientName: recipientName, courseTitle: courseTitle, issueDate: block.timestamp, revoked: false
+            recipientName: recipientName, courseTitle: courseTitle, certType: certType, issueDate: block.timestamp, revoked: false
         });
 
         _safeMint(recipient, tokenId);
 
-        emit CertificateIssued(tokenId, recipient, recipientName, courseTitle, block.timestamp);
+        emit CertificateIssued(tokenId, recipient, recipientName, courseTitle, certType, block.timestamp);
         return tokenId;
     }
 
-    /**
-     * @notice Verify whether a certificate is authentic and valid (not revoked).
-     * @param tokenId The certificate token ID to verify.
-     * @return True if the certificate exists and has not been revoked.
-     */
-    function verifyCertificate(uint256 tokenId) public view returns (bool) {
-        if (_ownerOf(tokenId) == address(0)) return false;
-        return !certificates[tokenId].revoked;
+   /**
+ * @notice Verifies whether a certificate exists and returns its details.
+ * @param tokenId The ID of the certificate to verify.
+ * @return exists True if the certificate exists.
+ * @return certificate The certificate details, including its revocation status.
+ */
+
+    function verifyCertificate(uint256 tokenId)
+    public
+    view
+    returns (bool exists, Certificate memory certificate)
+{
+    if (_ownerOf(tokenId) == address(0)) {
+        return (false, certificate);
     }
+
+    return (true, certificates[tokenId]);
+}
 
     /**
      * @notice Revoke an existing certificate, e.g. in case of fraud or error.
@@ -98,18 +134,22 @@ contract CertificateIssuer is ERC721, Ownable {
     function tokenURI(uint256 tokenId) public view virtual override returns (string memory) {
         _requireOwned(tokenId);
 
+
         Certificate memory cert = certificates[tokenId];
         string memory status = cert.revoked ? "REVOKED" : "VALID";
+        string memory certTypeName = _certificateTypeToString(cert.certType);
 
         string memory svg = string.concat(
             '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">',
-            '<rect width="800" height="600" fill="#f8f1dc" stroke="#c9a227" stroke-width="10"/>',
-            '<text x="400" y="100" font-family="serif" font-size="40" text-anchor="middle" fill="#333">Certificate of Completion</text>',
+            '<rect width="800" height="600" fill="#f8f1dc" stroke="#ff0000" stroke-width="10"/>',
+            '<text x="400" y="100" font-family="serif" font-size="40" text-anchor="middle" fill="#333">',
+            certTypeName,
+            "</text>",
             '<text x="400" y="200" font-family="sans-serif" font-size="28" text-anchor="middle" fill="#555">This certifies that</text>',
             '<text x="400" y="260" font-family="serif" font-size="36" text-anchor="middle" fill="#000">',
             _escapeXml(cert.recipientName),
             "</text>",
-            '<text x="400" y="320" font-family="sans-serif" font-size="24" text-anchor="middle" fill="#555">has successfully completed</text>',
+            '<text x="400" y="320" font-family="sans-serif" font-size="24" text-anchor="middle" fill="#555">was one of the students of </text>',
             '<text x="400" y="380" font-family="serif" font-size="32" text-anchor="middle" fill="#000">',
             _escapeXml(cert.courseTitle),
             "</text>",
@@ -126,13 +166,16 @@ contract CertificateIssuer is ERC721, Ownable {
             '{"name":"Certificate #',
             tokenId.toString(),
             '",',
-            '"description":"On-chain certificate of completion issued by the institution",',
+            '"description":"On-chain certificate issued by this institution",',
             '"attributes":[',
             '{"trait_type":"Recipient","value":"',
             _escapeJson(cert.recipientName),
             '"},',
             '{"trait_type":"Course","value":"',
             _escapeJson(cert.courseTitle),
+            '"},',
+            '{"trait_type":"Certificate-Type","value":"',
+            _escapeJson(_certificateTypeToString(cert.certType)),
             '"},',
             '{"trait_type":"Issue Date","display_type":"date","value":',
             cert.issueDate.toString(),
@@ -235,4 +278,58 @@ contract CertificateIssuer is ERC721, Ownable {
         }
         return string(trimmed);
     }
+
+    function _certificateTypeToString(
+    CertificateType certType
+) internal pure returns (string memory) {
+    if (certType == CertificateType.CertificateOfCompletion)
+        return "Certificate of Completion";
+
+    if (certType == CertificateType.CertificateOfAchievement)
+        return "Certificate of Achievement";
+
+    if (certType == CertificateType.CertificateOfExcellence)
+        return "Certificate of Excellence";
+
+    if (certType == CertificateType.CertificateOfParticipation)
+        return "Certificate of Participation";
+
+    if (certType == CertificateType.CertificateOfMerit)
+        return "Certificate of Merit";
+
+    if (certType == CertificateType.CertificateOfRecognition)
+        return "Certificate of Recognition";
+
+    if (certType == CertificateType.CertificateOfDistinction)
+        return "Certificate of Distinction";
+
+    if (certType == CertificateType.CertificateOfHonor)
+        return "Certificate of Honor";
+
+    if (certType == CertificateType.CertificateOfProficiency)
+        return "Certificate of Proficiency";
+
+    if (certType == CertificateType.CertificateOfCompetence)
+        return "Certificate of Competence";
+
+    if (certType == CertificateType.CertificateOfMastery)
+        return "Certificate of Mastery";
+
+    if (certType == CertificateType.CertificateOfGraduation)
+        return "Certificate of Graduation";
+
+    if (certType == CertificateType.CertificateOfAccomplishment)
+        return "Certificate of Accomplishment";
+
+    if (certType == CertificateType.CertificateOfSuccess)
+        return "Certificate of Success";
+
+    if (certType == CertificateType.CertificateOfCompletionWithDistinction)
+        return "Certificate of Completion With Distinction";
+
+    if (certType == CertificateType.CertificateOfCompletionWithHonors)
+        return "Certificate of Completion With Honors";
+
+    return "Unknown Certificate Type";
+}
 }
