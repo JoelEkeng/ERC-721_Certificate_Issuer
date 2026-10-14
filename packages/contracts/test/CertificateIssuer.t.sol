@@ -514,6 +514,8 @@ contract CertificateIssuerTest is Test {
     {
         // Bound inputs to valid ranges
         vm.assume(fuzzRecipient != address(0));
+        // Exclude contract addresses — _safeMint requires IERC721Receiver on contracts
+        vm.assume(fuzzRecipient.code.length == 0);
         vm.assume(bytes(name).length > 0 && bytes(name).length <= 128);
         vm.assume(bytes(course).length > 0 && bytes(course).length <= 256);
 
