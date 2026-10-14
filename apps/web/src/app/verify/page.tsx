@@ -5,6 +5,7 @@ import { useReadContract } from "wagmi";
 import { certificateIssuerAbi } from "@/lib/abi";
 import { CONTRACT_ADDRESS } from "@/lib/config";
 
+// Contract enum: 0 = Nonexistent, 1 = Valid, 2 = Revoked
 type CertStatus = "idle" | "loading" | "valid" | "revoked" | "nonexistent" | "error";
 
 export default function VerifyPage() {
@@ -13,26 +14,15 @@ export default function VerifyPage() {
   const [status, setStatus] = useState<CertStatus>("idle");
   const [errorMsg, setErrorMsg] = useState("");
 
-  const { data: certData, isError: certError } = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: certificateIssuerAbi,
-    functionName: "certificates",
-    args: tokenId !== null ? [tokenId] : undefined,
-    query: { enabled: tokenId !== null },
-  });
-
-  const { data: isValid, isError: verifyError } = useReadContract({
+  // Single contract call returns the full VerificationResult struct
+  const {
+    data: verifyResult,
+    isError: verifyError,
+    isLoading: verifyLoading,
+  } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: certificateIssuerAbi,
     functionName: "verifyCertificate",
-    args: tokenId !== null ? [tokenId] : undefined,
-    query: { enabled: tokenId !== null },
-  });
-
-  const { data: ownerAddr, isError: ownerError } = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: certificateIssuerAbi,
-    functionName: "ownerOf",
     args: tokenId !== null ? [tokenId] : undefined,
     query: { enabled: tokenId !== null },
   });
@@ -49,25 +39,28 @@ export default function VerifyPage() {
     setTokenId(BigInt(parsed));
   };
 
-  // Derive status once data arrives
+  // The contract returns a struct: { status (uint8), owner, recipientName, courseTitle, issueDate }
+  const contractStatus = verifyResult?.status;
+  const recipientName = verifyResult?.recipientName ?? "";
+  const courseTitle = verifyResult?.courseTitle ?? "";
+  const issueDate = verifyResult?.issueDate ? Number(verifyResult.issueDate) : 0;
+  const ownerAddr = verifyResult?.owner ?? "";
+
+  // Map contract enum to display status
   const derivedStatus: CertStatus =
     tokenId === null
       ? "idle"
-      : ownerError || certError
-        ? "nonexistent"
-        : verifyError
-          ? "error"
-          : isValid === true
+      : verifyError
+        ? "error"
+        : verifyLoading || contractStatus === undefined
+          ? "loading"
+          : contractStatus === 1
             ? "valid"
-            : isValid === false
+            : contractStatus === 2
               ? "revoked"
-              : "loading";
+              : "nonexistent";
 
   const displayStatus = status === "error" ? "error" : status === "idle" ? "idle" : derivedStatus;
-
-  const recipientName = certData?.[0] ?? "";
-  const courseTitle = certData?.[1] ?? "";
-  const issueDate = certData?.[2] ? Number(certData[2]) : 0;
 
   return (
     <div className="mx-auto max-w-xl px-4 py-16">
@@ -157,7 +150,7 @@ export default function VerifyPage() {
             <div>
               <dt className="font-medium text-zinc-600 dark:text-zinc-400">Owner</dt>
               <dd className="font-mono text-xs text-zinc-900 dark:text-zinc-100 break-all">
-                {ownerAddr ?? "—"}
+                {ownerAddr || "—"}
               </dd>
             </div>
           </dl>
@@ -185,6 +178,12 @@ export default function VerifyPage() {
               <dt className="font-medium text-zinc-600 dark:text-zinc-400">Issued</dt>
               <dd className="text-zinc-900 dark:text-zinc-100">
                 {issueDate > 0 ? new Date(issueDate * 1000).toLocaleDateString() : "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium text-zinc-600 dark:text-zinc-400">Owner</dt>
+              <dd className="font-mono text-xs text-zinc-900 dark:text-zinc-100 break-all">
+                {ownerAddr || "—"}
               </dd>
             </div>
           </dl>

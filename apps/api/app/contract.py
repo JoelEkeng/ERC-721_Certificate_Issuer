@@ -53,53 +53,70 @@ def get_contract(w3: Web3 | None = None) -> Contract:
 
 def get_certificate(token_id: int) -> dict[str, Any] | None:
     """
-    Read certificate data from the contract.
-    Returns None if the token does not exist.
+    Read certificate data from the contract using `getCertificate`.
+    Returns None if the token does not exist (the contract reverts).
     """
     w3 = get_web3()
     contract = get_contract(w3)
     try:
-        # Check if token exists by calling ownerOf
-        owner = contract.functions.ownerOf(token_id).call()
+        result = contract.functions.getCertificate(token_id).call()
+        # getCertificate returns: (owner, recipientName, courseTitle, issueDate, revoked)
+        owner, recipient_name, course_title, issue_date, revoked = result
+        return {
+            "tokenId": token_id,
+            "recipientName": recipient_name,
+            "courseTitle": course_title,
+            "issueDate": issue_date,
+            "revoked": revoked,
+            "owner": owner,
+            "status": "revoked" if revoked else "valid",
+        }
     except ContractLogicError:
         return None
     except Exception as exc:
-        # ownerOf reverts for nonexistent tokens
-        if "ERC721NonexistentToken" in str(exc) or "invalid token" in str(exc).lower():
+        if "ERC721NonexistentToken" in str(exc) or "revert" in str(exc).lower():
             return None
         raise
 
-    cert = contract.functions.certificates(token_id).call()
-    is_valid = contract.functions.verifyCertificate(token_id).call()
 
-    return {
-        "tokenId": token_id,
-        "recipientName": cert[0],
-        "courseTitle": cert[1],
-        "issueDate": cert[2],
-        "revoked": cert[3],
-        "owner": owner,
-        "status": "valid" if is_valid else "revoked",
-    }
+# Contract CertificateStatus enum: 0 = Nonexistent, 1 = Valid, 2 = Revoked
+_STATUS_MAP = {0: "nonexistent", 1: "valid", 2: "revoked"}
 
 
 def verify_certificate(token_id: int) -> dict[str, Any]:
     """
-    Verify a certificate and return its status.
+    Verify a certificate using the contract's `verifyCertificate` function.
+    Returns a full VerificationResult including status, owner, and metadata.
     Clearly distinguishes valid, revoked, and nonexistent certificates.
     """
-    cert = get_certificate(token_id)
-    if cert is None:
-        return {"tokenId": token_id, "status": "nonexistent", "valid": False}
+    w3 = get_web3()
+    contract = get_contract(w3)
+    result = contract.functions.verifyCertificate(token_id).call()
+    # verifyCertificate returns a struct: (status, owner, recipientName, courseTitle, issueDate)
+    status_enum, owner, recipient_name, course_title, issue_date = result
+    status = _STATUS_MAP.get(status_enum, "nonexistent")
+
+    if status == "nonexistent":
+        return {
+            "tokenId": token_id,
+            "status": "nonexistent",
+            "valid": False,
+            "recipientName": None,
+            "courseTitle": None,
+            "issueDate": None,
+            "owner": None,
+            "revoked": None,
+        }
+
     return {
-        "tokenId": cert["tokenId"],
-        "status": cert["status"],
-        "valid": cert["status"] == "valid",
-        "recipientName": cert["recipientName"],
-        "courseTitle": cert["courseTitle"],
-        "issueDate": cert["issueDate"],
-        "owner": cert["owner"],
-        "revoked": cert["revoked"],
+        "tokenId": token_id,
+        "status": status,
+        "valid": status == "valid",
+        "recipientName": recipient_name,
+        "courseTitle": course_title,
+        "issueDate": issue_date,
+        "owner": owner,
+        "revoked": status == "revoked",
     }
 
 
