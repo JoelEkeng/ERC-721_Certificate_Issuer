@@ -1,68 +1,134 @@
 # On-Chain Certificate Issuer
 
-A Foundry-based Solidity project implementing an ERC-721 certificate-of-completion contract.
+A full-stack platform for issuing, verifying, and managing soulbound ERC-721 certificates of completion on EVM-compatible blockchains.
 
 ## Features
 
-- **Institution-only issuance**: Only the contract owner (the institution) can mint certificates.
-- **On-chain metadata**: Each certificate stores recipient name, course title, issue date, and revocation status on-chain.
-- **Soulbound / non-transferable**: All transfer and approval functions are disabled so certificates remain with the original recipient.
-- **Public verification**: `verifyCertificate(tokenId)` returns `true` only if the token exists and has not been revoked.
-- **On-chain image**: `tokenURI` returns a Base64-encoded JSON metadata blob with a generated SVG certificate.
-- **Revocation**: The owner can revoke a certificate, e.g. for fraud or error.
+- **Institution-only issuance** — only the contract owner can mint certificates.
+- **Soulbound / non-transferable** — all transfer and approval functions are disabled.
+- **On-chain metadata** — each certificate stores recipient name, course title, issue date, and revocation status on-chain.
+- **On-chain SVG image** — `tokenURI` returns a Base64-encoded JSON blob with a generated SVG certificate.
+- **Public verification** — anyone can verify a certificate by token ID (valid / revoked / nonexistent).
+- **Revocation** — the institution can revoke certificates for fraud or error.
+- **Event indexing** — `CertificateIssued` and `CertificateRevoked` events for off-chain indexing.
+- **REST API** — FastAPI backend for server-side certificate queries.
+- **Web dashboard** — Next.js frontend with RainbowKit wallet integration.
 
-## Project Layout
+## Repository Layout
 
 ```text
 .
-├── foundry.toml
-├── script/
-│   └── DeployCertificateIssuer.s.sol   # Deployment script
-├── src/
-│   └── CertificateIssuer.sol             # Main ERC-721 contract
-└── test/
-    └── CertificateIssuer.t.sol           # Foundry tests
+├── packages/
+│   ├── contracts/          # Foundry project (Solidity smart contracts + tests)
+│   │   ├── src/CertificateIssuer.sol
+│   │   ├── test/CertificateIssuer.t.sol
+│   │   └── script/DeployCertificateIssuer.s.sol
+│   └── web3/               # Shared TypeScript (ABI, addresses, types)
+├── apps/
+│   ├── web/                # Next.js frontend (RainbowKit + wagmi)
+│   └── api/                # FastAPI backend (read-only REST API)
+├── docs/                   # Architecture, threat model, deployment guide
+├── .env.example            # Environment variable placeholders
+└── README.md
 ```
 
-## Getting Started
+## Quick Start
 
-Build the project:
+### Prerequisites
 
-```shell
+- [Foundry](https://getfoundry.sh/) (forge, anvil, cast)
+- Node.js >= 18
+- Python >= 3.9
+
+### 1. Build and test the smart contract
+
+```bash
+cd packages/contracts
 forge build
+forge test -vvv
 ```
 
-Run the tests:
+### 2. Start a local chain and deploy
 
-```shell
-forge test
-```
+```bash
+# Terminal 1: start Anvil
+anvil
 
-Format the code:
-
-```shell
-forge fmt
-```
-
-## Deployment
-
-Set the optional environment variables `CERTIFICATE_NAME` and `CERTIFICATE_SYMBOL`, then run:
-
-```shell
+# Terminal 2: deploy
+cd packages/contracts
 forge script script/DeployCertificateIssuer.s.sol:DeployCertificateIssuer \
-  --rpc-url <your_rpc_url> \
-  --private-key <your_private_key> \
+  --rpc-url http://127.0.0.1:8545 \
+  --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
   --broadcast
 ```
 
-If omitted, the contract deploys with name `On-Chain Certificate` and symbol `CERT`.
+Copy the deployed contract address from the output.
 
-## Key Contract Functions
+### 3. Start the backend API
 
-- `issueCertificate(address recipient, string memory recipientName, string memory courseTitle)` — mint a new certificate.
-- `verifyCertificate(uint256 tokenId)` — verify that a certificate exists and is not revoked.
-- `revoke(uint256 tokenId)` — invalidate an existing certificate (owner only).
-- `tokenURI(uint256 tokenId)` — return on-chain metadata + SVG image.
+```bash
+cd apps/api
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Set the deployed contract address
+export CONTRACT_ADDRESS=<your_deployed_address>
+uvicorn app.main:app --reload --port 8000
+```
+
+API docs: http://localhost:8000/docs
+
+### 4. Start the frontend
+
+```bash
+cd apps/web
+npm install
+
+# Create .env.local
+echo "NEXT_PUBLIC_CONTRACT_ADDRESS=<your_deployed_address>" > .env.local
+echo "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=demo" >> .env.local
+
+npm run dev
+```
+
+Open http://localhost:3000.
+
+### 5. Test the full flow
+
+1. Import an Anvil account into MetaMask.
+2. Add the Hardhat network (chain ID 31337, RPC http://127.0.0.1:8545).
+3. Navigate to `/dashboard` and connect the owner wallet.
+4. Issue a certificate.
+5. Navigate to `/verify` and verify it by token ID.
+
+## Smart Contract API
+
+| Function | Access | Description |
+|---|---|---|
+| `issueCertificate(address, string, string)` | Owner only | Mint a new certificate |
+| `verifyCertificate(uint256)` | Public (view) | Check if certificate is valid |
+| `revoke(uint256)` | Owner only | Revoke a certificate |
+| `tokenURI(uint256)` | Public (view) | Get on-chain metadata + SVG |
+| `certificates(uint256)` | Public (view) | Read certificate struct |
+
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Threat Model](docs/threat-model.md)
+- [Deployment Guide](docs/deployment.md)
+
+## Toolchain
+
+| Component | Technology | Version |
+|---|---|---|
+| Smart Contracts | Solidity | 0.8.27 |
+| Contract Framework | Foundry | latest |
+| Dependencies | OpenZeppelin Contracts | v5.x |
+| Frontend | Next.js | 16.x |
+| Wallet | RainbowKit + wagmi + viem | 2.x |
+| Backend | FastAPI + web3.py | 0.115.x / 7.x |
+| Styling | Tailwind CSS | v4 |
 
 ## License
 

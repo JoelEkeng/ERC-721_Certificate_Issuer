@@ -1,9 +1,20 @@
 # Foundry build artifacts
-out/
-cache/
+packages/contracts/out/
+packages/contracts/cache/
 
 # Broadcast logs
-broadcast/
+packages/contracts/broadcast/
+
+# Node / npm
+node_modules/
+.next/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
 
 # IDE
 .idea/
@@ -15,3 +26,4 @@ broadcast/
 # Environment variables
 .env
 .env.local
+.env.production
