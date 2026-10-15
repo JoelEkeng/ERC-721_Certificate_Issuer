@@ -145,16 +145,20 @@ If the RPC is unavailable, the verify endpoint returns HTTP 503 with a clear mes
 1. Client requests a nonce: `POST /api/v1/auth/nonce`
 2. Client constructs and signs a SIWE message in the wallet
 3. Client sends the message and signature: `POST /api/v1/auth/login`
-4. Backend verifies: nonce validity, expiration, domain, signature
-5. On success, returns the authenticated address
+4. Backend verifies: nonce (atomic consumption), expiration, domain, URI, chain ID, and signature
+5. On success, returns an HMAC-signed session token
+6. Client passes `Authorization: Bearer <token>` for protected routes
 
 ### Security Properties
 
 - **Nonce expiration**: Nonces expire after `SIWE_NONCE_TTL` seconds (default 300).
-- **Replay protection**: Each nonce can only be used once.
+- **Atomic nonce consumption**: Uses `UPDATE ... WHERE used=false` to prevent TOCTOU race conditions.
 - **Domain binding**: The SIWE domain must match `SIWE_DOMAIN`.
+- **URI binding**: The SIWE URI must match `SIWE_URI`.
+- **Chain-ID binding**: The SIWE chain ID must match `CHAIN_ID`.
 - **Signature verification**: The `siwe` library verifies EIP-4361 signatures.
-- **No address trust**: An address in an HTTP header is never trusted without a verified SIWE session.
+- **HMAC session tokens**: Signed with a per-startup secret, 1-hour TTL. Not stored server-side.
+- **No address trust**: An address in an HTTP header is never trusted without a verified session token.
 
 ### Relationship to Contract Authority
 

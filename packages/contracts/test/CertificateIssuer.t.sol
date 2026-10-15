@@ -438,8 +438,7 @@ contract CertificateIssuerTest is Test {
 
         // URIs should be different since status changed
         assertTrue(
-            keccak256(bytes(uriBefore)) != keccak256(bytes(uriAfter)),
-            "Token URI should change after revocation"
+            keccak256(bytes(uriBefore)) != keccak256(bytes(uriAfter)), "Token URI should change after revocation"
         );
     }
 
@@ -478,7 +477,7 @@ contract CertificateIssuerTest is Test {
         string memory uri = issuer.tokenURI(tokenId);
         assertTrue(bytes(uri).length > 0);
 
-        (,string memory name, string memory course,,) = issuer.getCertificate(tokenId);
+        (, string memory name, string memory course,,) = issuer.getCertificate(tokenId);
         assertEq(name, 'Tom & "Jerry"');
         assertEq(course, 'Rock & Roll "101"');
     }
@@ -488,7 +487,7 @@ contract CertificateIssuerTest is Test {
         // UTF-8 characters should be stored and retrieved correctly
         uint256 tokenId = issuer.issueCertificate(recipient, unicode"José García", unicode"Español Avanzado");
 
-        (,string memory name, string memory course,,) = issuer.getCertificate(tokenId);
+        (, string memory name, string memory course,,) = issuer.getCertificate(tokenId);
         assertEq(name, unicode"José García");
         assertEq(course, unicode"Español Avanzado");
     }
@@ -545,7 +544,7 @@ contract CertificateIssuerTest is Test {
 
         assertEq(issuer.ownerOf(tokenId), fuzzRecipient);
 
-        (,string memory storedName, string memory storedCourse,,) = issuer.getCertificate(tokenId);
+        (, string memory storedName, string memory storedCourse,,) = issuer.getCertificate(tokenId);
         assertEq(storedName, name);
         assertEq(storedCourse, course);
     }

@@ -150,7 +150,9 @@ async def search_certificates(
     )
 
     if q:
-        like_pattern = f"%{q}%"
+        # Escape LIKE wildcards to prevent wildcard injection
+        safe_q = q.replace("%", r"\%").replace("_", r"\_")
+        like_pattern = f"%{safe_q}%"
         query = query.where(
             (Certificate.recipient_name.ilike(like_pattern))
             | (Certificate.course_title.ilike(like_pattern))
@@ -337,14 +339,9 @@ async def get_nonce(
 async def siwe_login(
     body: SiweLoginRequest,
     session: AsyncSession = Depends(get_session),
-) -> dict[str, Any]:
+) -> SessionResponse:
     """Verify a SIWE signed message and establish a session."""
-    result = await verify_siwe_message(body.message, body.signature, session)
-    return {
-        "address": result["address"],
-        "chain_id": result["chain_id"],
-        "authenticated": True,
-    }
+    return await verify_siwe_message(body.message, body.signature, session)
 
 
 # ---------------------------------------------------------------------------

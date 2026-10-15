@@ -221,8 +221,12 @@ contract CertificateIssuerSecurityTest is Test {
     function testIssueCertificateWithMaxLengthStringsSucceeds() public {
         bytes memory maxName = new bytes(128);
         bytes memory maxCourse = new bytes(256);
-        for (uint256 i = 0; i < 128; i++) maxName[i] = "X";
-        for (uint256 i = 0; i < 256; i++) maxCourse[i] = "Y";
+        for (uint256 i = 0; i < 128; i++) {
+            maxName[i] = "X";
+        }
+        for (uint256 i = 0; i < 256; i++) {
+            maxCourse[i] = "Y";
+        }
 
         vm.prank(owner);
         uint256 tokenId = issuer.issueCertificate(recipient, string(maxName), string(maxCourse));
@@ -350,7 +354,7 @@ contract CertificateIssuerSecurityTest is Test {
         vm.prank(owner);
         uint256 tokenId = issuer.issueCertificate(recipient, "Alice", "Course");
 
-        (, , , uint256 issueDate, ) = issuer.getCertificate(tokenId);
+        (,,, uint256 issueDate,) = issuer.getCertificate(tokenId);
         assertEq(issueDate, 1000000);
     }
 
@@ -360,7 +364,7 @@ contract CertificateIssuerSecurityTest is Test {
         vm.prank(owner);
         uint256 tokenId = issuer.issueCertificate(recipient, "Alice", "Course");
 
-        (, , , uint256 issueDate, ) = issuer.getCertificate(tokenId);
+        (,,, uint256 issueDate,) = issuer.getCertificate(tokenId);
         assertEq(issueDate, 0);
     }
 
@@ -371,7 +375,7 @@ contract CertificateIssuerSecurityTest is Test {
         vm.prank(owner);
         uint256 tokenId = issuer.issueCertificate(recipient, "Alice", "Course");
 
-        (, , , uint256 issueDate, ) = issuer.getCertificate(tokenId);
+        (,,, uint256 issueDate,) = issuer.getCertificate(tokenId);
         assertEq(issueDate, 4102444800);
 
         // tokenURI should still format correctly

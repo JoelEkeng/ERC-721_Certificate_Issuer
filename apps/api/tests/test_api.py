@@ -225,6 +225,29 @@ async def test_nonce_generation(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_audit_rejects_forged_token(client: AsyncClient):
+    """A forged Bearer token should not grant access to admin routes."""
+    resp = await client.get(
+        "/api/v1/admin/audit",
+        headers={"Authorization": "Bearer forged.token.here"},
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_audit_rejects_header_only_auth(client: AsyncClient):
+    """The old X-Wallet-Address header should no longer grant access."""
+    resp = await client.get(
+        "/api/v1/admin/audit",
+        headers={
+            "X-Wallet-Address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+            "Authorization": "anything",
+        },
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_search_revoked_filter(client: AsyncClient, test_session: AsyncSession):
     cert_valid = Certificate(
         chain_id=31337,

@@ -134,11 +134,7 @@ contract CertificateIssuerInvariantTest is StdInvariant, Test {
         for (uint256 i = 0; i < count && i < 20; i++) {
             uint256 tokenId = handler.issuedTokenIds(i);
             address expected = handler.expectedOwners(tokenId);
-            assertEq(
-                issuer.ownerOf(tokenId),
-                expected,
-                "Certificate owner must not change"
-            );
+            assertEq(issuer.ownerOf(tokenId), expected, "Certificate owner must not change");
         }
     }
 
