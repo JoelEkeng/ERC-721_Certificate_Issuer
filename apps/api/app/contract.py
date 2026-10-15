@@ -20,20 +20,25 @@ from .config import settings
 
 logger = logging.getLogger(__name__)
 
-# Load ABI from the Foundry build artifact
-_ABI_PATH = Path(__file__).resolve().parents[3] / "packages" / "contracts" / "out" / "CertificateIssuer.sol" / "CertificateIssuer.json"
+# Bundled ABI (works in Docker / deployed environments)
+_BUNDLED_ABI_PATH = Path(__file__).resolve().parent / "abi.json"
+# Foundry build artifact (used in local development)
+_FOUNDRY_ABI_PATH = Path(__file__).resolve().parents[3] / "packages" / "contracts" / "out" / "CertificateIssuer.sol" / "CertificateIssuer.json"
 
 
 def _load_abi() -> list[dict[str, Any]]:
-    """Load the contract ABI from the Foundry compilation output."""
-    if not _ABI_PATH.exists():
-        raise FileNotFoundError(
-            f"Contract artifact not found at {_ABI_PATH}. "
-            "Run `forge build` in packages/contracts/ first."
-        )
-    with open(_ABI_PATH) as f:
-        artifact = json.load(f)
-    return artifact["abi"]
+    """Load the contract ABI. Prefers bundled abi.json, falls back to Foundry output."""
+    if _BUNDLED_ABI_PATH.exists():
+        with open(_BUNDLED_ABI_PATH) as f:
+            return json.load(f)
+    if _FOUNDRY_ABI_PATH.exists():
+        with open(_FOUNDRY_ABI_PATH) as f:
+            artifact = json.load(f)
+        return artifact["abi"]
+    raise FileNotFoundError(
+        f"Contract ABI not found at {_BUNDLED_ABI_PATH} or {_FOUNDRY_ABI_PATH}. "
+        "Run `forge build` in packages/contracts/ or copy abi.json to apps/api/app/."
+    )
 
 
 def get_web3() -> Web3:

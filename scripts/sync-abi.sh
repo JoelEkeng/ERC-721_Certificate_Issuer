@@ -40,6 +40,17 @@ print(f'export const certificateIssuerAbi = {abi_json} as const;')
 # Copy to frontend (Turbopack cannot resolve cross-root re-exports)
 cp "$SHARED_OUTPUT" "$FRONTEND_OUTPUT"
 
+# Bundle raw ABI JSON for the backend (used in Docker where Foundry output is absent)
+BACKEND_ABI="$REPO_ROOT/apps/api/app/abi.json"
+python3 -c "
+import json
+with open('$ARTIFACT') as f:
+    data = json.load(f)
+with open('$BACKEND_ABI', 'w') as f:
+    json.dump(data['abi'], f, indent=2)
+"
+
 ENTRIES=$(python3 -c "import json; print(len(json.load(open('$ARTIFACT'))['abi']))")
 echo "ABI synced to $SHARED_OUTPUT ($ENTRIES entries)"
 echo "ABI copied to $FRONTEND_OUTPUT"
+echo "ABI bundled to $BACKEND_ABI"
