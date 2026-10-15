@@ -1,13 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
   useWriteContract,
   useWaitForTransactionReceipt,
   useAccount,
+  useChainId,
+  useReadContract,
 } from "wagmi";
-import { certificateIssuerAbi } from "@/lib/abi";
-import { CONTRACT_ADDRESS } from "@/lib/config";
+import { certificateContract, CertificateStatus } from "@/lib/contracts";
+import { revokeSchema, type RevokeInput } from "@/lib/validation";
+import { translateError } from "@/lib/errors";
+import { getTxUrl } from "@/lib/explorer";
 
 export default function RevokeCertificateForm({
   onSuccess,
@@ -15,96 +21,207 @@ export default function RevokeCertificateForm({
   onSuccess?: () => void;
 }) {
   const { isConnected } = useAccount();
-  const [tokenIdInput, setTokenIdInput] = useState("");
-  const [validationError, setValidationError] = useState("");
+  const chainId = useChainId();
+  const [lookupId, setLookupId] = useState<bigint | null>(null);
+
+  const {
+    register,
+    handleSubmit,
+    watch,
+    reset: resetForm,
+    formState: { errors, isValid },
+  } = useForm<RevokeInput>({
+    resolver: zodResolver(revokeSchema),
+    mode: "onChange",
+    defaultValues: { tokenId: "" },
+  });
+
+  const tokenIdValue = watch("tokenId");
+
+  // Look up the certificate before revoking
+  const { data: verifyResult } = useReadContract({
+    ...certificateContract,
+    functionName: "verifyCertificate",
+    args: lookupId !== null ? [lookupId] : undefined,
+    query: { enabled: lookupId !== null },
+  });
+
+  const certStatus = verifyResult?.status;
 
   const {
     writeContract,
     data: txHash,
     isPending: isWriting,
     error: writeError,
-    reset,
+    reset: resetWrite,
   } = useWriteContract();
 
-  const { isLoading: isConfirming, isSuccess: isConfirmed } =
-    useWaitForTransactionReceipt({
-      hash: txHash,
-    });
+  const { isLoading: isConfirming, isSuccess: isConfirmed, error: receiptError } =
+    useWaitForTransactionReceipt({ hash: txHash });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setValidationError("");
-    reset();
+  useEffect(() => {
+    if (isConfirmed) onSuccess?.();
+  }, [isConfirmed, onSuccess]);
 
-    const parsed = Number(tokenIdInput);
-    if (isNaN(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
-      setValidationError("Please enter a valid non-negative integer token ID.");
-      return;
+  // Update lookup when input changes
+  useEffect(() => {
+    if (/^\d+$/.test(tokenIdValue) && Number(tokenIdValue) >= 0) {
+      setLookupId(BigInt(tokenIdValue));
+    } else {
+      setLookupId(null);
     }
+  }, [tokenIdValue]);
 
+  const onSubmit = (data: RevokeInput) => {
+    resetWrite();
     writeContract({
-      address: CONTRACT_ADDRESS,
-      abi: certificateIssuerAbi,
+      ...certificateContract,
       functionName: "revoke",
-      args: [BigInt(parsed)],
+      args: [BigInt(data.tokenId)],
     });
   };
 
-  if (isConfirmed && txHash) {
-    setTimeout(() => {
-      setTokenIdInput("");
-      reset();
-      onSuccess?.();
-    }, 0);
-  }
+  const handleReset = () => {
+    resetForm();
+    resetWrite();
+    setLookupId(null);
+  };
+
+  const txUrl = txHash ? getTxUrl(chainId, txHash) : null;
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        <label
+          htmlFor="revokeTokenId"
+          className="block text-sm font-medium text-foreground"
+        >
           Token ID to Revoke
         </label>
         <input
-          type="number"
-          min="0"
-          step="1"
+          id="revokeTokenId"
+          type="text"
+          inputMode="numeric"
           placeholder="0"
-          value={tokenIdInput}
-          onChange={(e) => setTokenIdInput(e.target.value)}
-          className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder-zinc-500"
+          {...register("tokenId")}
+          className="mt-1 w-full rounded-lg border border-card-border bg-background px-3 py-2.5 text-sm text-foreground placeholder-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          aria-describedby={errors.tokenId ? "revoke-error" : undefined}
         />
+        {errors.tokenId && (
+          <p id="revoke-error" className="mt-1 text-sm text-destructive">
+            {errors.tokenId.message}
+          </p>
+        )}
       </div>
 
-      {validationError && (
-        <p className="text-sm text-red-600 dark:text-red-400">{validationError}</p>
-      )}
-      {writeError && (
-        <p className="text-sm text-red-600 dark:text-red-400">
-          Revocation failed: {writeError.message.split("\n")[0]}
-        </p>
-      )}
-      {isConfirming && (
-        <p className="text-sm text-amber-600 dark:text-amber-400">
-          Waiting for confirmation...
-        </p>
-      )}
-      {isConfirmed && (
-        <p className="text-sm text-green-600 dark:text-green-400">
-          Certificate revoked successfully!
-        </p>
+      {/* Certificate status preview */}
+      {lookupId !== null && certStatus !== undefined && (
+        <div
+          className={`rounded-lg border p-3 text-sm ${
+            certStatus === CertificateStatus.Valid
+              ? "border-success/30 bg-success/5 text-success"
+              : certStatus === CertificateStatus.Revoked
+                ? "border-warning/30 bg-warning/5 text-warning"
+                : "border-card-border bg-card text-muted"
+          }`}
+        >
+          {certStatus === CertificateStatus.Valid && (
+            <>
+              Certificate #{tokenIdValue} is currently{" "}
+              <strong>valid</strong>. Revoking will mark it as invalid.
+              {verifyResult?.recipientName && (
+                <span className="block mt-1">
+                  Recipient: {verifyResult.recipientName}
+                </span>
+              )}
+            </>
+          )}
+          {certStatus === CertificateStatus.Revoked && (
+            <>Certificate #{tokenIdValue} is already <strong>revoked</strong>.</>
+          )}
+          {certStatus === CertificateStatus.Nonexistent && (
+            <>Certificate #{tokenIdValue} does not exist.</>
+          )}
+        </div>
       )}
 
-      <button
-        type="submit"
-        disabled={!isConnected || isWriting || isConfirming}
-        className="w-full rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {isWriting
-          ? "Confirm in wallet..."
-          : isConfirming
-            ? "Confirming..."
-            : "Revoke Certificate"}
-      </button>
+      {writeError && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+          <p className="text-sm text-destructive">
+            {translateError(writeError)}
+          </p>
+        </div>
+      )}
+      {receiptError && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+          <p className="text-sm text-destructive">
+            Revocation failed on-chain. {translateError(receiptError)}
+          </p>
+        </div>
+      )}
+
+      {txHash && isConfirming && (
+        <div className="rounded-lg border border-accent/30 bg-accent/5 p-3">
+          <p className="text-sm text-accent">
+            Waiting for confirmation...
+          </p>
+          {txUrl && (
+            <a
+              href={txUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 block text-xs text-accent underline"
+            >
+              View transaction
+            </a>
+          )}
+        </div>
+      )}
+
+      {isConfirmed && (
+        <div className="rounded-lg border border-success/30 bg-success/5 p-3">
+          <p className="font-semibold text-success">
+            Certificate revoked successfully.
+          </p>
+          {txUrl && (
+            <a
+              href={txUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 block text-xs text-accent underline"
+            >
+              View on block explorer
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={handleReset}
+            className="mt-2 text-sm text-accent underline hover:text-accent-hover"
+          >
+            Revoke another
+          </button>
+        </div>
+      )}
+
+      {!isConfirmed && (
+        <button
+          type="submit"
+          disabled={
+            !isConnected ||
+            isWriting ||
+            isConfirming ||
+            !isValid ||
+            certStatus !== CertificateStatus.Valid
+          }
+          className="w-full rounded-lg bg-destructive px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-destructive/90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isWriting
+            ? "Confirm in wallet..."
+            : isConfirming
+              ? "Confirming..."
+              : "Revoke Certificate"}
+        </button>
+      )}
     </form>
   );
 }

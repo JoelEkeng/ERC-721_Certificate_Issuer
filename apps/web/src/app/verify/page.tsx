@@ -1,197 +1,161 @@
 "use client";
 
 import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { verifySchema, type VerifyInput } from "@/lib/validation";
 import { useReadContract } from "wagmi";
-import { certificateIssuerAbi } from "@/lib/abi";
+import { certificateContract, CertificateStatus } from "@/lib/contracts";
 import { CONTRACT_ADDRESS } from "@/lib/config";
-
-// Contract enum: 0 = Nonexistent, 1 = Valid, 2 = Revoked
-type CertStatus = "idle" | "loading" | "valid" | "revoked" | "nonexistent" | "error";
+import CertificateCard from "@/components/CertificateCard";
+import Link from "next/link";
 
 export default function VerifyPage() {
-  const [tokenIdInput, setTokenIdInput] = useState("");
-  const [tokenId, setTokenId] = useState<bigint | null>(null);
-  const [status, setStatus] = useState<CertStatus>("idle");
-  const [errorMsg, setErrorMsg] = useState("");
+  const [lookupId, setLookupId] = useState<bigint | null>(null);
 
-  // Single contract call returns the full VerificationResult struct
   const {
-    data: verifyResult,
-    isError: verifyError,
-    isLoading: verifyLoading,
-  } = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: certificateIssuerAbi,
-    functionName: "verifyCertificate",
-    args: tokenId !== null ? [tokenId] : undefined,
-    query: { enabled: tokenId !== null },
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<VerifyInput>({
+    resolver: zodResolver(verifySchema),
+    mode: "onSubmit",
+    defaultValues: { tokenId: "" },
   });
 
-  const handleVerify = () => {
-    setErrorMsg("");
-    const parsed = Number(tokenIdInput);
-    if (isNaN(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
-      setStatus("error");
-      setErrorMsg("Please enter a valid non-negative integer token ID.");
-      return;
-    }
-    setStatus("loading");
-    setTokenId(BigInt(parsed));
+  const {
+    data: result,
+    isLoading,
+    isError,
+    error,
+  } = useReadContract({
+    ...certificateContract,
+    functionName: "verifyCertificate",
+    args: lookupId !== null ? [lookupId] : undefined,
+    query: { enabled: lookupId !== null },
+  });
+
+  const onSubmit = (data: VerifyInput) => {
+    setLookupId(BigInt(data.tokenId));
   };
 
-  // The contract returns a struct: { status (uint8), owner, recipientName, courseTitle, issueDate }
-  const contractStatus = verifyResult?.status;
-  const recipientName = verifyResult?.recipientName ?? "";
-  const courseTitle = verifyResult?.courseTitle ?? "";
-  const issueDate = verifyResult?.issueDate ? Number(verifyResult.issueDate) : 0;
-  const ownerAddr = verifyResult?.owner ?? "";
-
-  // Map contract enum to display status
-  const derivedStatus: CertStatus =
-    tokenId === null
-      ? "idle"
-      : verifyError
-        ? "error"
-        : verifyLoading || contractStatus === undefined
-          ? "loading"
-          : contractStatus === 1
-            ? "valid"
-            : contractStatus === 2
-              ? "revoked"
-              : "nonexistent";
-
-  const displayStatus = status === "error" ? "error" : status === "idle" ? "idle" : derivedStatus;
+  const certStatus = result?.status;
 
   return (
     <div className="mx-auto max-w-xl px-4 py-16">
-      <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+      <h1 className="text-3xl font-bold tracking-tight text-foreground">
         Verify Certificate
       </h1>
-      <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-        Enter a certificate token ID to check its authenticity and status.
+      <p className="mt-2 text-sm text-muted">
+        Enter a certificate token ID to check its authenticity and status
+        directly from the blockchain.
       </p>
 
-      <div className="mt-8 flex gap-3">
-        <input
-          type="number"
-          min="0"
-          step="1"
-          placeholder="Token ID (e.g. 0)"
-          value={tokenIdInput}
-          onChange={(e) => {
-            setTokenIdInput(e.target.value);
-            setStatus("idle");
-            setTokenId(null);
-          }}
-          onKeyDown={(e) => e.key === "Enter" && handleVerify()}
-          className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder-zinc-400 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder-zinc-500"
-        />
+      <form onSubmit={handleSubmit(onSubmit)} className="mt-8 flex gap-3">
+        <div className="flex-1">
+          <label htmlFor="verifyTokenId" className="sr-only">
+            Token ID
+          </label>
+          <input
+            id="verifyTokenId"
+            type="text"
+            inputMode="numeric"
+            placeholder="Token ID (e.g. 0)"
+            {...register("tokenId")}
+            className="w-full rounded-lg border border-card-border bg-background px-4 py-2.5 text-sm text-foreground placeholder-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            aria-describedby={errors.tokenId ? "verify-error" : undefined}
+          />
+          {errors.tokenId && (
+            <p id="verify-error" className="mt-1 text-sm text-destructive">
+              {errors.tokenId.message}
+            </p>
+          )}
+        </div>
         <button
-          onClick={handleVerify}
-          className="rounded-lg bg-amber-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-amber-500 disabled:opacity-50"
-          disabled={!tokenIdInput}
+          type="submit"
+          className="rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
         >
           Verify
         </button>
-      </div>
+      </form>
 
-      {displayStatus === "loading" && (
-        <div className="mt-8 rounded-lg border border-zinc-200 p-6 dark:border-zinc-800">
-          <p className="text-sm text-zinc-500">Checking on-chain status...</p>
+      {/* Loading */}
+      {lookupId !== null && isLoading && (
+        <div className="mt-8 rounded-xl border border-card-border bg-card p-6 text-center">
+          <p className="text-sm text-muted">Checking on-chain status...</p>
         </div>
       )}
 
-      {displayStatus === "error" && (
-        <div className="mt-8 rounded-lg border border-red-300 bg-red-50 p-6 dark:border-red-800 dark:bg-red-950">
-          <p className="text-sm font-medium text-red-800 dark:text-red-300">
-            {errorMsg || "An error occurred while verifying."}
+      {/* Network error */}
+      {lookupId !== null && isError && (
+        <div className="mt-8 rounded-xl border border-destructive/30 bg-destructive/5 p-6">
+          <p className="font-semibold text-destructive">
+            Unable to verify certificate
           </p>
-        </div>
-      )}
-
-      {displayStatus === "nonexistent" && (
-        <div className="mt-8 rounded-lg border border-zinc-300 bg-zinc-50 p-6 dark:border-zinc-700 dark:bg-zinc-900">
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-3 w-3 rounded-full bg-zinc-400" />
-            <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-              NONEXISTENT
-            </span>
-          </div>
-          <p className="mt-2 text-sm text-zinc-500">
-            No certificate found for token ID {tokenIdInput}. It may not have
-            been issued yet, or the token ID is incorrect.
+          <p className="mt-1 text-sm text-muted">
+            Could not connect to the blockchain network. This does not mean the
+            certificate is invalid. Please check your network connection and try
+            again.
           </p>
+          {error && (
+            <p className="mt-2 text-xs text-muted">
+              {error.message.split("\n")[0]}
+            </p>
+          )}
         </div>
       )}
 
-      {displayStatus === "valid" && (
-        <div className="mt-8 rounded-lg border border-green-300 bg-green-50 p-6 dark:border-green-800 dark:bg-green-950">
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-3 w-3 rounded-full bg-green-500" />
-            <span className="text-sm font-semibold text-green-700 dark:text-green-300">
-              VALID
-            </span>
+      {/* Not found */}
+      {lookupId !== null &&
+        !isLoading &&
+        !isError &&
+        certStatus === CertificateStatus.Nonexistent && (
+          <div className="mt-8 rounded-xl border border-card-border bg-card p-6">
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-muted" />
+              <span className="text-sm font-semibold text-muted">
+                Not Found
+              </span>
+            </div>
+            <p className="mt-2 text-sm text-muted">
+              No certificate found for token ID {lookupId.toString()}. It may
+              not have been issued, or the token ID is incorrect.
+            </p>
           </div>
-          <dl className="mt-4 space-y-2 text-sm">
-            <div>
-              <dt className="font-medium text-zinc-600 dark:text-zinc-400">Recipient</dt>
-              <dd className="text-zinc-900 dark:text-zinc-100">{recipientName}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-zinc-600 dark:text-zinc-400">Course</dt>
-              <dd className="text-zinc-900 dark:text-zinc-100">{courseTitle}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-zinc-600 dark:text-zinc-400">Issued</dt>
-              <dd className="text-zinc-900 dark:text-zinc-100">
-                {issueDate > 0 ? new Date(issueDate * 1000).toLocaleDateString() : "—"}
-              </dd>
-            </div>
-            <div>
-              <dt className="font-medium text-zinc-600 dark:text-zinc-400">Owner</dt>
-              <dd className="font-mono text-xs text-zinc-900 dark:text-zinc-100 break-all">
-                {ownerAddr || "—"}
-              </dd>
-            </div>
-          </dl>
-        </div>
-      )}
+        )}
 
-      {displayStatus === "revoked" && (
-        <div className="mt-8 rounded-lg border border-red-300 bg-red-50 p-6 dark:border-red-800 dark:bg-red-950">
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-3 w-3 rounded-full bg-red-500" />
-            <span className="text-sm font-semibold text-red-700 dark:text-red-300">
-              REVOKED
-            </span>
+      {/* Valid or Revoked */}
+      {lookupId !== null &&
+        !isLoading &&
+        !isError &&
+        result &&
+        (certStatus === CertificateStatus.Valid ||
+          certStatus === CertificateStatus.Revoked) && (
+          <div className="mt-8 space-y-4">
+            <CertificateCard
+              recipientName={result.recipientName}
+              courseTitle={result.courseTitle}
+              issueDate={result.issueDate}
+              owner={result.owner}
+              tokenId={lookupId.toString()}
+              status={certStatus}
+              contractAddress={CONTRACT_ADDRESS}
+            />
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Link
+                href={`/verify/${lookupId.toString()}`}
+                className="rounded-lg border border-card-border bg-card px-4 py-2 text-center text-sm font-medium text-foreground transition-colors hover:bg-card-border/50"
+              >
+                View Full Details
+              </Link>
+            </div>
+            <p className="text-xs text-muted">
+              This result is read directly from the smart contract at{" "}
+              <span className="font-mono">{CONTRACT_ADDRESS}</span>. Screenshots
+              or downloaded images are not proof of authenticity.
+            </p>
           </div>
-          <dl className="mt-4 space-y-2 text-sm">
-            <div>
-              <dt className="font-medium text-zinc-600 dark:text-zinc-400">Recipient</dt>
-              <dd className="text-zinc-900 dark:text-zinc-100">{recipientName}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-zinc-600 dark:text-zinc-400">Course</dt>
-              <dd className="text-zinc-900 dark:text-zinc-100">{courseTitle}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-zinc-600 dark:text-zinc-400">Issued</dt>
-              <dd className="text-zinc-900 dark:text-zinc-100">
-                {issueDate > 0 ? new Date(issueDate * 1000).toLocaleDateString() : "—"}
-              </dd>
-            </div>
-            <div>
-              <dt className="font-medium text-zinc-600 dark:text-zinc-400">Owner</dt>
-              <dd className="font-mono text-xs text-zinc-900 dark:text-zinc-100 break-all">
-                {ownerAddr || "—"}
-              </dd>
-            </div>
-          </dl>
-          <p className="mt-3 text-sm text-red-600 dark:text-red-400">
-            This certificate has been revoked by the issuing institution.
-          </p>
-        </div>
-      )}
+        )}
     </div>
   );
 }

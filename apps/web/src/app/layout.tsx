@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     "Issue, verify, and manage soulbound ERC-721 certificates of completion on-chain.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"
