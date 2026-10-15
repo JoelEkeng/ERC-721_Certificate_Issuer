@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
-import "openzeppelin-contracts/contracts/access/Ownable.sol";
+import "openzeppelin-contracts/contracts/access/Ownable2Step.sol";
 import "openzeppelin-contracts/contracts/utils/Strings.sol";
 import "openzeppelin-contracts/contracts/utils/Base64.sol";
 
@@ -20,8 +20,10 @@ import "openzeppelin-contracts/contracts/utils/Base64.sol";
  *      token is sealed, which is correct for OpenZeppelin v5.x where `transferFrom`
  *      and `safeTransferFrom` are the only external paths through `_update`.
  *
- *      Ownership renunciation is disabled. If the owner role is lost, no further
- *      certificates can be issued or revoked.
+ *      Ownership uses OpenZeppelin Ownable2Step: transferring ownership requires
+ *      the new owner to call `acceptOwnership()`, preventing accidental transfers
+ *      to incorrect addresses. Renunciation is disabled. If the owner role is
+ *      lost, no further certificates can be issued or revoked.
  *
  *      On-chain metadata: `tokenURI` returns a Base64-encoded JSON blob with an
  *      embedded SVG certificate image. Recipient name and course title are escaped
@@ -30,7 +32,7 @@ import "openzeppelin-contracts/contracts/utils/Base64.sol";
  *      provides no update function. Only the `revoked` flag can change (set, never
  *      cleared).
  */
-contract CertificateIssuer is ERC721, Ownable {
+contract CertificateIssuer is ERC721, Ownable2Step {
     using Strings for uint256;
     using Strings for address;
 

@@ -158,11 +158,18 @@ contract CertificateIssuerSecurityTest is Test {
     // Ownership transfer security
     // =========================================================================
 
-    function testOwnershipTransferRevokesOldOwnerAuthority() public {
+    function testOwnershipTransfer2StepRevokesOldOwnerAuthority() public {
         address newOwner = address(0x5678);
 
+        // Initiate transfer — old owner is still active
         vm.prank(owner);
         issuer.transferOwnership(newOwner);
+        assertEq(issuer.owner(), owner);
+
+        // New owner accepts
+        vm.prank(newOwner);
+        issuer.acceptOwnership();
+        assertEq(issuer.owner(), newOwner);
 
         // Old owner cannot issue
         vm.prank(owner);
@@ -182,16 +189,27 @@ contract CertificateIssuerSecurityTest is Test {
         issuer.revoke(tokenId);
     }
 
-    function testCannotTransferOwnershipToZero() public {
+    function testTransferOwnershipToZeroCancelsPending() public {
+        // In Ownable2Step, transferring to zero is a cancel, not an error
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableInvalidOwner.selector, address(0)));
         issuer.transferOwnership(address(0));
+        assertEq(issuer.pendingOwner(), address(0));
+        assertEq(issuer.owner(), owner);
     }
 
     function testNonOwnerCannotTransferOwnership() public {
         vm.prank(attacker);
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
         issuer.transferOwnership(attacker);
+    }
+
+    function testNonPendingOwnerCannotAccept() public {
+        vm.prank(owner);
+        issuer.transferOwnership(recipient);
+
+        vm.prank(attacker);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        issuer.acceptOwnership();
     }
 
     // =========================================================================

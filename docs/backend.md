@@ -157,8 +157,25 @@ If the RPC is unavailable, the verify endpoint returns HTTP 503 with a clear mes
 - **URI binding**: The SIWE URI must match `SIWE_URI`.
 - **Chain-ID binding**: The SIWE chain ID must match `CHAIN_ID`.
 - **Signature verification**: The `siwe` library verifies EIP-4361 signatures.
-- **HMAC session tokens**: Signed with a per-startup secret, 1-hour TTL. Not stored server-side.
+- **HMAC session tokens**: Signed with `SESSION_SECRET` (or a random per-startup key if unset). Tokens include address, chain_id, iat, and exp claims. 1-hour TTL. Verified with constant-time `hmac.compare_digest`. Not stored server-side.
+- **Configurable signing key**: Set `SESSION_SECRET` (base64-encoded, >= 32 bytes) for sessions that survive restarts. If unset, a random key is generated per-startup and all sessions are invalidated on restart.
 - **No address trust**: An address in an HTTP header is never trusted without a verified session token.
+- **Nonce cleanup**: Expired nonces are automatically cleaned up by the background indexer (every ~5 minutes). The cleanup uses a 2x TTL grace period to avoid interfering with in-flight requests.
+
+### Rate Limiting
+
+Rate limiting is enforced using [slowapi](https://github.com/laurentS/slowapi) (built on the `limits` library):
+
+- **Key function**: Uses `REMOTE_ADDR` (direct peer IP). Does NOT trust `X-Forwarded-For`.
+- **Per-endpoint limits**:
+  - `POST /auth/nonce`: 10/minute
+  - `POST /auth/login`: 10/minute
+  - `GET /certificates/{id}/verify`: 30/minute
+  - `GET /certificates` (search): 60/minute
+  - All other: 60/minute (default)
+- **Storage**: In-memory by default (`memory://`). For multi-worker deployments, set `RATE_LIMIT_STORAGE_URI` to a Redis URL.
+- **Response**: Returns HTTP 429 with `{"detail": "Rate limit exceeded: ..."}`.
+- **Reverse proxy**: If behind a trusted proxy (nginx, Cloudflare), configure the proxy to set a verified header and update the `key_func` in `app/rate_limit.py`.
 
 ### Relationship to Contract Authority
 

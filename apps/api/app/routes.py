@@ -1,12 +1,10 @@
 """API route definitions — versioned under /api/v1."""
 
-from __future__ import annotations
-
 import contextlib
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +21,7 @@ from .contract import get_web3
 from .contract import verify_certificate as chain_verify
 from .db.engine import get_session
 from .db.models import AuditLog, Certificate, IndexerCheckpoint, Institution
+from .rate_limit import limiter
 from .schemas import (
     AuditLogResponse,
     CertificateResponse,
@@ -128,7 +127,9 @@ async def get_certificate(
 
 
 @router.get("/certificates", response_model=CertificateSearchResponse)
+@limiter.limit("60/minute")
 async def search_certificates(
+    request: Request,
     q: str = Query(default="", max_length=256, description="Search by name or course"),
     recipient: str = Query(default="", max_length=42, description="Filter by recipient wallet"),
     revoked: bool | None = Query(default=None, description="Filter by revocation status"),
@@ -199,7 +200,8 @@ _STATUS_MAP = {0: "nonexistent", 1: "valid", 2: "revoked"}
     response_model=VerifyResponse,
     responses={503: {"model": ErrorResponse}},
 )
-async def verify_certificate_endpoint(token_id: int) -> dict[str, Any]:
+@limiter.limit("30/minute")
+async def verify_certificate_endpoint(request: Request, token_id: int) -> dict[str, Any]:
     """Verify a certificate directly from the smart contract.
 
     This is the authoritative verification source. The database index
@@ -328,7 +330,9 @@ async def get_transaction(
 
 
 @router.post("/auth/nonce", response_model=NonceResponse)
+@limiter.limit("10/minute")
 async def get_nonce(
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> NonceResponse:
     """Generate a fresh SIWE nonce for authentication."""
@@ -336,8 +340,10 @@ async def get_nonce(
 
 
 @router.post("/auth/login", response_model=SessionResponse)
+@limiter.limit("10/minute")
 async def siwe_login(
-    body: SiweLoginRequest,
+    request: Request,
+    body: SiweLoginRequest = Body(...),
     session: AsyncSession = Depends(get_session),
 ) -> SessionResponse:
     """Verify a SIWE signed message and establish a session."""

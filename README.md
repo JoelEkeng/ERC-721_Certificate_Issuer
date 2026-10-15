@@ -282,6 +282,10 @@ Copy `.env.example` to `.env` (backend) and `apps/web/.env.local` (frontend) and
 | `SIWE_DOMAIN` | No | `localhost` | Expected SIWE message domain |
 | `SIWE_URI` | No | `http://localhost:3000` | Expected SIWE message URI |
 | `SIWE_NONCE_TTL` | No | `300` | Nonce expiration in seconds |
+| `RATE_LIMIT_PER_MINUTE` | No | `60` | Default rate limit per IP per minute |
+| `RATE_LIMIT_STORAGE_URI` | No | `memory://` | Rate-limit backend (`memory://` or `redis://host:port`) |
+| `SESSION_SECRET` | No | *(random per-startup)* | Base64-encoded 32+ byte HMAC key for session tokens |
+| `DEBUG` | No | `false` | Enable verbose error responses (never `true` in production) |
 
 ### Deployment-Only Variables
 
@@ -356,7 +360,7 @@ Open http://localhost:3000.
 
 ### Contract: `CertificateIssuer`
 
-Inherits: `ERC721` (OpenZeppelin v5), `Ownable` (OpenZeppelin v5)
+Inherits: `ERC721` (OpenZeppelin v5), `Ownable2Step` (OpenZeppelin v5)
 
 Solidity: `^0.8.20` | Compiler: `0.8.27` | Optimizer: 200 runs + via-ir
 
@@ -568,6 +572,29 @@ SIWE (Sign-In with Ethereum) flow:
 5. Returns HMAC-signed session token
 6. Token is passed as `Authorization: Bearer <token>` for protected routes
 
+### Rate Limiting
+
+Rate limiting is enforced via [slowapi](https://github.com/laurentS/slowapi) using the direct peer IP address (`REMOTE_ADDR`). Per-endpoint limits:
+
+| Endpoint | Limit |
+|---|---|
+| `POST /auth/nonce` | 10/minute |
+| `POST /auth/login` | 10/minute |
+| `GET /certificates/{id}/verify` | 30/minute |
+| `GET /certificates` (search) | 60/minute |
+| All other endpoints | 60/minute (default) |
+
+Returns HTTP 429 when exceeded. Storage defaults to in-memory (per-process). For multi-worker deployments, set `RATE_LIMIT_STORAGE_URI` to a Redis URL.
+
+### ABI Management
+
+The ABI is generated from Foundry compilation output and stored in `packages/web3/src/abi.ts`. The frontend re-exports from this file. To regenerate after contract changes:
+
+```bash
+cd packages/contracts && forge build
+./scripts/sync-abi.sh
+```
+
 For full backend documentation, see [docs/backend.md](docs/backend.md).
 
 ---
@@ -699,7 +726,7 @@ For detailed deployment instructions, see [docs/deployment.md](docs/deployment.m
 ### Security Properties
 
 - **Soulbound enforcement:** All five transfer/approval entry points revert. No bypass exists through inherited ERC-721 functions.
-- **Access control:** `onlyOwner` for issuance and revocation. Ownership transfer is single-step (`Ownable`, not `Ownable2Step`).
+- **Access control:** `onlyOwner` for issuance and revocation. Ownership transfer uses two-step `Ownable2Step`: `transferOwnership()` sets a pending owner, who must call `acceptOwnership()` to complete the transfer. This prevents accidental transfers to incorrect addresses.
 - **Ownership safety:** `renounceOwnership()` is disabled to prevent accidental lockout.
 - **Reentrancy:** `_safeMint` calls `onERC721Received` on contract recipients, but since `issueCertificate` is `onlyOwner`, a malicious recipient cannot re-enter to issue more certificates.
 - **Input validation:** String length limits prevent gas DoS. Metadata escaping prevents SVG/JSON injection.
@@ -709,7 +736,7 @@ For detailed deployment instructions, see [docs/deployment.md](docs/deployment.m
 
 - **Not professionally audited.** This contract has not undergone an external security audit.
 - **Single-owner model.** If the owner key is compromised, an attacker can issue and revoke freely. Use a multisig in production.
-- **Single-step ownership transfer.** A typo in `transferOwnership` permanently bricks the contract. Consider `Ownable2Step` for production.
+- **Ownership transfer safety.** The contract uses `Ownable2Step` — the new owner must explicitly accept. However, if the pending owner is a contract that cannot call `acceptOwnership()`, the transfer cannot complete. Use a multisig (e.g., Gnosis Safe) for production ownership.
 - **No upgrade path.** The contract is not upgradeable. Bugs require redeployment.
 - **No batch operations.** Each issuance requires a separate transaction (~170K gas).
 - **Timestamp reliance.** `block.timestamp` can be manipulated by miners (±15 seconds); acceptable for certificate dates.
@@ -920,7 +947,7 @@ These items are **not implemented** and represent potential future enhancements:
 
 - [ ] **Batch issuance** — issue multiple certificates in a single transaction
 - [ ] **Institutional multisig** — Gnosis Safe as contract owner for production
-- [ ] **Ownable2Step** — two-step ownership transfer to prevent accidental lockout
+- [x] **Ownable2Step** — two-step ownership transfer to prevent accidental lockout
 - [ ] **EIP-5192** — implement the soulbound token standard interface
 - [ ] **Additional networks** — Polygon, Arbitrum, Base, Optimism support
 - [ ] **Role-based access** — multiple authorized issuers per institution
@@ -929,7 +956,7 @@ These items are **not implemented** and represent potential future enhancements:
 - [ ] **Contract upgradeability** — UUPS or transparent proxy for bug fixes
 - [ ] **Batch verification** — verify multiple certificates in one call
 - [ ] **Export/print** — downloadable PDF certificate (with on-chain verification link)
-- [ ] **Rate limiting middleware** — enforce `RATE_LIMIT_PER_MINUTE` via slowapi or similar
+- [x] **Rate limiting middleware** — enforced via slowapi with per-endpoint limits (10/min auth, 30/min verify, 60/min search)
 - [ ] **Nonce cleanup** — periodic purge of expired `auth_nonce` rows
 
 ---
@@ -942,7 +969,7 @@ MIT
 
 ### Acknowledgements
 
-- [OpenZeppelin Contracts](https://github.com/OpenZeppelin/openzeppelin-contracts) — ERC-721 and Ownable implementations (MIT)
+- [OpenZeppelin Contracts](https://github.com/OpenZeppelin/openzeppelin-contracts) — ERC-721 and Ownable2Step implementations (MIT)
 - [Foundry](https://github.com/foundry-rs/foundry) — Solidity development framework (MIT/Apache-2.0)
 - [Next.js](https://nextjs.org) — React framework
 - [RainbowKit](https://www.rainbowkit.com) — Wallet connection UI

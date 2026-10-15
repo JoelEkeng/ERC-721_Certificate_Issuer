@@ -364,11 +364,30 @@ contract CertificateIssuerTest is Test {
         assertEq(issuer.owner(), owner);
     }
 
-    function testTransferOwnership() public {
+    function testTransferOwnership2Step() public {
+        // Step 1: Owner initiates transfer
         vm.prank(owner);
         issuer.transferOwnership(other);
 
+        // Owner is still the actual owner until acceptance
+        assertEq(issuer.owner(), owner);
+        assertEq(issuer.pendingOwner(), other);
+
+        // Owner can still issue during pending transfer
+        vm.prank(owner);
+        issuer.issueCertificate(recipient, "During Transfer", "Course");
+
+        // Pending owner cannot yet issue
+        vm.prank(other);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, other));
+        issuer.issueCertificate(recipient, "Not Yet", "Course");
+
+        // Step 2: New owner accepts
+        vm.prank(other);
+        issuer.acceptOwnership();
+
         assertEq(issuer.owner(), other);
+        assertEq(issuer.pendingOwner(), address(0));
 
         // New owner can issue
         vm.prank(other);
@@ -379,6 +398,28 @@ contract CertificateIssuerTest is Test {
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, owner));
         issuer.issueCertificate(recipient, "Bob", "Course 2");
+    }
+
+    function testAcceptOwnershipUnauthorized() public {
+        vm.prank(owner);
+        issuer.transferOwnership(other);
+
+        // A third party cannot accept
+        vm.prank(recipient);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, recipient));
+        issuer.acceptOwnership();
+    }
+
+    function testCancelPendingTransfer() public {
+        vm.prank(owner);
+        issuer.transferOwnership(other);
+        assertEq(issuer.pendingOwner(), other);
+
+        // Cancel by setting pending to zero
+        vm.prank(owner);
+        issuer.transferOwnership(address(0));
+        assertEq(issuer.pendingOwner(), address(0));
+        assertEq(issuer.owner(), owner);
     }
 
     function testRenounceOwnershipReverts() public {

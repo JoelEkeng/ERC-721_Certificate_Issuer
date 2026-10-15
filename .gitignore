@@ -28,3 +28,11 @@ venv/
 .env
 .env.local
 .env.production
+
+# Lock files (platform-specific)
+apps/api/uv.lock
+apps/web/pnpm-lock.yaml
+apps/web/pnpm-workspace.yaml
+
+# Foundry preprocessor artifacts
+packages/contracts/foundry-pp/

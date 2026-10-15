@@ -42,6 +42,18 @@ class Settings(BaseSettings):
 
     # Rate limiting
     rate_limit_per_minute: int = 60
+    # Storage for rate limiting. Default: in-memory (per-process).
+    # For multi-worker: use "redis://localhost:6379" or similar.
+    rate_limit_storage_uri: str = "memory://"
+
+    # Session token signing key. If set, used for HMAC signing.
+    # If empty, a random key is generated per-startup (sessions
+    # do not survive restarts). For production, set to a stable
+    # base64-encoded 32+ byte secret managed outside source control.
+    session_secret: str = ""
+
+    # Debug mode — set False in production. Controls verbose error responses.
+    debug: bool = False
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
@@ -51,3 +63,29 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def validate_settings() -> list[str]:
+    """Validate settings for production readiness. Returns a list of warnings."""
+    warnings: list[str] = []
+    if settings.contract_address == "0x0000000000000000000000000000000000000000":
+        warnings.append("CONTRACT_ADDRESS is the zero address — set it to the deployed contract")
+    if settings.database_url.startswith("sqlite"):
+        warnings.append("Using SQLite — use PostgreSQL for production (DATABASE_URL)")
+    if not settings.session_secret:
+        warnings.append("SESSION_SECRET is not set — sessions will not survive restarts")
+    if settings.rate_limit_storage_uri == "memory://":
+        warnings.append(
+            "Rate-limit storage is in-memory — does not share across workers. "
+            "Use Redis for multi-worker deployments."
+        )
+    if settings.cors_origins == "http://localhost:3000,http://127.0.0.1:3000":
+        warnings.append("CORS_ORIGINS is set to localhost defaults — update for production")
+    if settings.siwe_domain == "localhost":
+        warnings.append("SIWE_DOMAIN is 'localhost' — update for production")
+    if settings.indexer_confirmation_depth < 12 and settings.chain_id == 1:
+        warnings.append(
+            f"INDEXER_CONFIRMATION_DEPTH={settings.indexer_confirmation_depth} "
+            "is low for mainnet — use >= 12"
+        )
+    return warnings

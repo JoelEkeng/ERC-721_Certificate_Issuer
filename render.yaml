@@ -1,0 +1,32 @@
+# Render Blueprint — deploys the FastAPI backend as a Docker web service.
+# https://docs.render.com/infrastructure-as-code
+services:
+  - type: web
+    name: certificate-issuer-api
+    runtime: docker
+    dockerfilePath: apps/api/Dockerfile
+    dockerContext: apps/api
+    plan: free
+    envVars:
+      - key: RPC_URL
+        sync: false          # set manually in Render dashboard
+      - key: CONTRACT_ADDRESS
+        sync: false
+      - key: CHAIN_ID
+        value: "11155111"
+      - key: DATABASE_URL
+        value: "sqlite+aiosqlite:///./certificates.db"
+      - key: CORS_ORIGINS
+        sync: false          # set to your Vercel frontend URL
+      - key: SIWE_DOMAIN
+        sync: false          # set to your Vercel domain
+      - key: SIWE_URI
+        sync: false          # set to your Vercel URL
+      - key: INDEXER_CONFIRMATION_DEPTH
+        value: "2"
+      - key: INDEXER_POLL_INTERVAL
+        value: "15"
+      - key: SESSION_SECRET
+        generateValue: true  # Render generates a random value
+      - key: DEBUG
+        value: "false"

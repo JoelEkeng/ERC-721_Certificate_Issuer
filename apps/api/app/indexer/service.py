@@ -386,8 +386,13 @@ async def reconcile_with_chain(token_ids: list[int] | None = None) -> int:
     return corrected
 
 
+_NONCE_CLEANUP_INTERVAL = 60  # Run nonce cleanup every 60 index passes (~5 min at 5s interval)
+
+
 async def run_indexer_loop() -> None:
     """Background loop that polls for new events."""
+    from app.auth.siwe_auth import cleanup_expired_nonces  # avoid circular import
+
     logger.info(
         "Starting indexer — chain=%d contract=%s interval=%ds",
         settings.chain_id,
@@ -395,12 +400,22 @@ async def run_indexer_loop() -> None:
         settings.indexer_poll_interval,
     )
     retries = 0
+    loop_count = 0
 
     while True:
         try:
             count = await index_events_once()
             if count > 0:
                 logger.info("Indexed %d new events", count)
+
+            # Periodic nonce cleanup
+            loop_count += 1
+            if loop_count % _NONCE_CLEANUP_INTERVAL == 0:
+                async with _engine_module.async_session_factory() as session:
+                    cleaned = await cleanup_expired_nonces(session)
+                    if cleaned > 0:
+                        logger.info("Cleaned up %d expired nonces", cleaned)
+
             retries = 0  # Reset on success
         except Exception as exc:
             retries += 1
