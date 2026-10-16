@@ -1,9 +1,21 @@
 # Foundry build artifacts
-out/
-cache/
+packages/contracts/out/
+packages/contracts/cache/
 
 # Broadcast logs
-broadcast/
+packages/contracts/broadcast/
+
+# Node / npm
+node_modules/
+.next/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.db
 
 # IDE
 .idea/
@@ -15,3 +27,12 @@ broadcast/
 # Environment variables
 .env
 .env.local
+.env.production
+
+# Lock files (platform-specific)
+apps/api/uv.lock
+apps/web/pnpm-lock.yaml
+apps/web/pnpm-workspace.yaml
+
+# Foundry preprocessor artifacts
+packages/contracts/foundry-pp/
